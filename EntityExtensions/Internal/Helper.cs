@@ -50,6 +50,10 @@ namespace EntityExtensions.Internal
                     return "nvarchar(MAX)";
                 case TypeCode.Boolean:
                     return "bit";
+                case TypeCode.Int64:
+                    return "bigint";
+                case TypeCode.Double:
+                    return "float";
                 default:
                     if (type == typeof(Guid))
                     {
