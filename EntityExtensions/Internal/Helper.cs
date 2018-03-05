@@ -2,7 +2,9 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Entity;
+using System.Linq;
 using System.Reflection;
+using EntityExtensions.Common;
 
 namespace EntityExtensions.Internal
 {
@@ -59,6 +61,10 @@ namespace EntityExtensions.Internal
                     {
                         return "uniqueidentifier";
                     }
+                    else if (type == typeof(byte[]))
+                    {
+                        return "binary";
+                    }
                     else
                     {
                         throw new Exception($"Unsupported database column type: {type.Name}");
@@ -73,24 +79,30 @@ namespace EntityExtensions.Internal
         /// <param name="entities"></param>
         /// <param name="tabCols"></param>
         /// <returns></returns>
-        internal static DataTable GetDatatable<T>(this DbContext context, ICollection<T> entities, IDictionary<string, PropertyInfo> tabCols = null)
+        internal static DataTable GetDatatable<T>(this DbContext context, ICollection<T> entities, IDictionary<string, EntityColumnInformation> tabCols = null)
         {
             if (tabCols == null) tabCols = context.GetTableColumns<T>();
             var table = new DataTable();
             foreach (var colName in tabCols.Keys)
             {
-                var colType = tabCols[colName].PropertyType.IsGenericType
-                    ? tabCols[colName].PropertyType.GetGenericArguments()[0]
-                    : tabCols[colName].PropertyType;
+                var colType = tabCols[colName].Type.IsGenericType
+                    ? tabCols[colName].Type.GetGenericArguments()[0]
+                    : tabCols[colName].Type;
                 table.Columns.Add(colName, colType);
             }
+
             table.BeginLoadData();
             foreach (var entity in entities)
             {
                 var row = table.NewRow();
-                foreach (var column in tabCols.Keys)
+                foreach (DataColumn column in table.Columns)
                 {
-                    row[column] = tabCols[column].GetValue(entity, null)??DBNull.Value;
+                    row[column] = tabCols[column.ColumnName].PropertyInfo?.GetValue(entity, null) ?? DBNull.Value;
+                    if (row[column] == DBNull.Value &&
+                        tabCols[column.ColumnName].HasDiscriminator)
+                    {
+                        row[column] = tabCols[column.ColumnName].DiscriminatorValue ?? DBNull.Value;
+                    }
                 }
                 table.Rows.Add(row);
             }

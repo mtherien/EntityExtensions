@@ -3,6 +3,7 @@ using System.Data.Entity;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using EntityExtensions.Common;
 
 namespace EntityExtensions.Internal
 {
@@ -144,7 +145,7 @@ namespace EntityExtensions.Internal
         /// <param name="columns"></param>
         /// <returns></returns>
         public static string GetOutTableDdl(this DbContext context, string tableName,
-            IDictionary<string, PropertyInfo> keys, IDictionary<string, PropertyInfo> columns)
+            IDictionary<string, EntityColumnInformation> keys, IDictionary<string, EntityColumnInformation> columns)
         {
             var allColumns = keys.ToDictionary(x => OldColumnPrefix + x.Key, y => y.Value);
             foreach (var key in keys)
@@ -162,13 +163,13 @@ namespace EntityExtensions.Internal
         }
 
 
-        public static string GetTableDdl(this DbContext context, string tableName, IDictionary<string, PropertyInfo> tabCols)
+        public static string GetTableDdl(this DbContext context, string tableName, IDictionary<string, EntityColumnInformation> tabCols)
         {
             var sb = new StringBuilder();
             sb.AppendLine($"Create Table {tableName}(");
 
             sb.AppendLine(string.Join(",\r\n",
-                tabCols.Select(x => $"[{x.Key}] {Helper.GetSqlServerType(x.Value.PropertyType)}")));
+                tabCols.Select(x => $"[{x.Key}] {Helper.GetSqlServerType(x.Value.Type)}")));
 
             sb.Append(")");
             return sb.ToString();

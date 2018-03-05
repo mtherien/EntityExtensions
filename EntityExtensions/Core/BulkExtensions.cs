@@ -198,18 +198,18 @@ namespace EntityExtensions.Core
         /// <typeparam name="T"></typeparam>
         /// <param name="entities"></param>
         /// <param name="identityProps"></param>
-        internal static void SetTempIdentity<T>(ICollection<T> entities, ICollection<PropertyInfo> identityProps)
+        internal static void SetTempIdentity<T>(ICollection<T> entities, ICollection<EntityColumnInformation> identityProps)
         {
             var id = IdentitySeed;
             foreach (var entity in entities)
             {
                 foreach (var prop in identityProps)
                 {
-                    if (Convert.ToInt64(prop.GetValue(entity, null)) != 0)
+                    if (Convert.ToInt64(prop.PropertyInfo?.GetValue(entity, null)) != 0)
                     {
                         continue;
                     }
-                    prop.SetValue(entity, id, null);
+                    prop.PropertyInfo?.SetValue(entity, id, null);
                     id += IdentityIncrement;
                 }
             }
@@ -248,12 +248,12 @@ namespace EntityExtensions.Core
 
             foreach (var entity in entities)
             {
-                var key = HashHelper.CombineHashCodes(outSettings.Keys.Select(x => x.Value.GetValue(entity, null)).ToArray());
+                var key = HashHelper.CombineHashCodes(outSettings.Keys.Select(x => x.Value.PropertyInfo?.GetValue(entity, null)).ToArray());
                 var i = 0;
                 foreach (var prop in outSettings.AllColumns.Values)
                 {
                     //Values are stored in the object array in the same order as AllColumns, hence it's safe to use the index.
-                    prop.SetValue(entity, values[key][i], null);
+                    prop.PropertyInfo.SetValue(entity, values[key][i], null);
                     i++;
                 }
             }
@@ -261,21 +261,21 @@ namespace EntityExtensions.Core
 
         internal class OutputColumns
         {
-            public readonly Dictionary<string, PropertyInfo> Keys;
-            public readonly Dictionary<string, PropertyInfo> Columns;
-            public readonly Dictionary<string, PropertyInfo> AllColumns;
+            public readonly Dictionary<string, EntityColumnInformation> Keys;
+            public readonly Dictionary<string, EntityColumnInformation> Columns;
+            public readonly Dictionary<string, EntityColumnInformation> AllColumns;
             public readonly string TableName;
             public readonly string TableSql;
             public string SelectSql => $"Select * From {TableName}";
 
-            public OutputColumns(Dictionary<string, PropertyInfo> keys, Dictionary<string, PropertyInfo> columns,
+            public OutputColumns(Dictionary<string, EntityColumnInformation> keys, Dictionary<string, EntityColumnInformation> columns,
                 string tableName, string tableSql)
             {
                 Keys = keys;
                 Columns = columns;
                 TableName = tableName;
                 TableSql = tableSql;
-                AllColumns = new Dictionary<string, PropertyInfo>(keys);
+                AllColumns = new Dictionary<string, EntityColumnInformation>(keys);
                 if (columns == null) return;
                 foreach (var key in columns.Keys)
                 {
@@ -285,7 +285,7 @@ namespace EntityExtensions.Core
         }
 
         internal static OutputColumns GetOutputColumns<T>(DbContext context, bool hasInserts, bool hasUpdates,
-            RefreshMode refreshMode, Dictionary<string, PropertyInfo> columns, ICollection<string> keys,
+            RefreshMode refreshMode, Dictionary<string, EntityColumnInformation> columns, ICollection<string> keys,
             Dictionary<string, bool> computedCols)
         {
             List<string> keyList = null;
@@ -363,7 +363,7 @@ namespace EntityExtensions.Core
                 foreach (var item in updateList)
                 {
                     //Below should be safe, since identity columns are always integers, using 64 to account for large ids.
-                    if (Convert.ToInt64(keyCol.GetValue(item, null)) == 0)
+                    if (Convert.ToInt64(keyCol.PropertyInfo?.GetValue(item, null)) == 0)
                     {
                         //If identity value is 0 it's assumed to be a new record
                         insertList.Add(item);

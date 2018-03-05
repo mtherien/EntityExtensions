@@ -3,11 +3,13 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Data.Entity;
+using System.Data.Entity.Core.Mapping;
 using System.Data.Entity.Core.Metadata.Edm;
 using System.Data.Entity.Core.Objects;
 using System.Data.Entity.Infrastructure;
 using System.Data.Entity.ModelConfiguration;
 using System.Reflection;
+using EntityExtensions.Common;
 
 namespace EntityExtensions
 {
@@ -22,19 +24,30 @@ namespace EntityExtensions
         /// </summary>
         /// <param name="context"></param>
         /// <returns></returns>
-        public static Dictionary<string, PropertyInfo> GetTableKeyColumns<T>(this DbContext context)
+        public static Dictionary<string, EntityColumnInformation> GetTableKeyColumns<T>(this DbContext context)
         {
             var entityType = typeof(T);
-            var octx = ((IObjectContextAdapter) context).ObjectContext;
-            var storageEntityType = octx.MetadataWorkspace.GetItems(DataSpace.SSpace)
-                .Where(x => x.BuiltInTypeKind == BuiltInTypeKind.EntityType).OfType<EntityType>()
-                .Single(x => x.Name == entityType.Name);
+            var storageEntityType = GetStorageEntityType<T>(context);
             var columnNames = storageEntityType.Properties.ToDictionary(x => x.Name,
                 y => y.MetadataProperties.FirstOrDefault(x => x.Name == "PreferredName")?.Value as string ?? y.Name);
 
-            return storageEntityType.KeyMembers.Select((elm, index) => new
-            { elm.Name, Property = entityType.GetProperty(columnNames[elm.Name]) })
+            var columns = storageEntityType.KeyMembers.Select((elm, index) => new
+                    {elm.Name, Property = entityType.GetProperty(columnNames[elm.Name])})
                 .ToDictionary(x => x.Name, x => x.Property);
+
+            var columnKeys = new Dictionary<string, EntityColumnInformation>();
+            foreach (var columnName in columns.Keys)
+            {
+                columnKeys.Add(columnName,
+                    new EntityColumnInformation
+                    {
+                        Name = columnName,
+                        Type = columns[columnName].PropertyType,
+                        PropertyInfo = columns[columnName]
+                    });
+            }
+
+            return columnKeys;
         }
 
         /// <summary>
@@ -48,11 +61,27 @@ namespace EntityExtensions
         {
             var entityType = typeof(T);
             var octx = (context as IObjectContextAdapter).ObjectContext;
-            var et = octx.MetadataWorkspace.GetItemCollection(DataSpace.SSpace)
+            var entitySetBases = octx.MetadataWorkspace.GetItemCollection(DataSpace.SSpace)
                 .GetItems<EntityContainer>()
                 .Single()
-                .BaseEntitySets
-                .Single(x => x.Name == entityType.Name);
+                .BaseEntitySets;
+
+            EntitySetBase et = null;
+            if (entitySetBases.Any())
+            {
+                et = entitySetBases.FirstOrDefault(x => x.Name == entityType.Name);
+            }
+
+            if (et == null && entityType.BaseType != null)
+            {
+                // In case the entity is inherited by another entity
+                et = entitySetBases.Single(x => x.Name == entityType.BaseType.Name);
+            }
+
+            if (et == null)
+            {
+                throw new Exception($"Cannot find entity of type {entityType.Name} in the context");
+            }
 
             return String.Concat(et.MetadataProperties["Schema"].Value, ".", et.MetadataProperties["Table"].Value);
         }
@@ -66,11 +95,8 @@ namespace EntityExtensions
         /// <returns></returns>
         public static Dictionary<string, bool> GetComputedColumnNames<T>(this DbContext context)
         {
-            var entityType = typeof(T);
-            var octx = (context as IObjectContextAdapter).ObjectContext;
-            var storageEntityType = octx.MetadataWorkspace.GetItems(DataSpace.SSpace)
-                .Where(x => x.BuiltInTypeKind == BuiltInTypeKind.EntityType)
-                .OfType<EntityType>().Single(x => x.Name == entityType.Name);
+            var storageEntityType = GetStorageEntityType<T>(context);
+
             return storageEntityType.Members
                 .Where(x => x.IsStoreGeneratedIdentity || x.IsStoreGeneratedComputed)
                 .ToDictionary(x => x.Name, y => y.IsStoreGeneratedIdentity);
@@ -84,20 +110,59 @@ namespace EntityExtensions
         /// <typeparam name="T"></typeparam>
         /// <param name="context"></param>
         /// <returns></returns>
-        public static Dictionary<string, PropertyInfo> GetTableColumns<T>(this DbContext context)
+        public static Dictionary<string, EntityColumnInformation> GetTableColumns<T>(this DbContext context)
         {
             var entityType = typeof(T);
-            var octx = (context as IObjectContextAdapter).ObjectContext;
-            var storageEntityType = octx.MetadataWorkspace.GetItems(DataSpace.SSpace)
-                .Where(x => x.BuiltInTypeKind == BuiltInTypeKind.EntityType).OfType<EntityType>()
-                .Single(x => x.Name == entityType.Name);
+
+            var storageEntityType = GetStorageEntityType<T>(context);
 
             var columnNames = storageEntityType.Properties.ToDictionary(x => x.Name,
                 y => y.MetadataProperties.FirstOrDefault(x => x.Name == "PreferredName")?.Value as string ?? y.Name);
 
-            return storageEntityType.Properties.Select((elm, index) =>
+            var columns = storageEntityType.Properties.Select((elm, index) =>
                     new { elm.Name, Property = entityType.GetProperty(columnNames[elm.Name]) })
                 .ToDictionary(x => x.Name, x => x.Property);
+
+            // The discriminator columns are columns used in a TPH table
+            // If this entity has any discriminator columns, we need to get them
+            // and add them to the table column list
+            var discriminatorColumnValues =
+                context.GetDiscriminatorValues<T>().ToDictionary(v => v.Key, v => v.Value);
+
+            var columnList = new Dictionary<string, EntityColumnInformation>();
+            foreach (var columnName in columns.Keys)
+            {
+                var propertyInfo = columns[columnName];
+                EntityColumnInformation entityColumnInformation = null;
+                if (propertyInfo == null)
+                {
+                    if (discriminatorColumnValues.ContainsKey(columnName))
+                    {
+                        entityColumnInformation = new EntityColumnInformation
+                        {
+                            Name = columnName,
+                            Type = discriminatorColumnValues[columnName].GetType(),
+                            DiscriminatorValue = discriminatorColumnValues[columnName]
+                        };
+                    }
+                }
+                else
+                {
+                    entityColumnInformation = new EntityColumnInformation
+                    {
+                        Name = columnName,
+                        Type = propertyInfo.PropertyType,
+                        PropertyInfo = propertyInfo
+                    };
+                }
+
+                if (entityColumnInformation != null)
+                {
+                    columnList.Add(columnName, entityColumnInformation);
+                }
+            }
+
+            return columnList;
         }
 
         /// <summary>
@@ -110,11 +175,7 @@ namespace EntityExtensions
         /// <returns></returns>
         public static string GetColumnName<T>(this DbContext context, string propertyName)
         {
-            var entityType = typeof(T);
-            var octx = (context as IObjectContextAdapter).ObjectContext;
-            var storageEntityType = octx.MetadataWorkspace.GetItems(DataSpace.SSpace)
-                .Where(x => x.BuiltInTypeKind == BuiltInTypeKind.EntityType).OfType<EntityType>()
-                .Single(x => x.Name == entityType.Name);
+            var storageEntityType = GetStorageEntityType<T>(context);
 
             return storageEntityType.Properties.FirstOrDefault(y =>
                 y.MetadataProperties.Any(x => x.Name == "PreferredName" && x.Value as string == propertyName))?.Name;
@@ -147,6 +208,36 @@ namespace EntityExtensions
             //Dependents are all navigation properties that has a One multiplicity from the type's end.
             return set.ElementType.NavigationProperties;
 
+        }
+
+        private static EntityType GetStorageEntityType<T>(DbContext context)
+        {
+            var entityType = typeof(T);
+            var octx = (context as IObjectContextAdapter).ObjectContext;
+
+            var storageEntityTypes = octx.MetadataWorkspace.GetItems(DataSpace.SSpace)
+                .Where(x => x.BuiltInTypeKind == BuiltInTypeKind.EntityType).OfType<EntityType>();
+
+            EntityType storageEntityType = null;
+            if (storageEntityTypes.Any())
+            {
+                storageEntityType = storageEntityTypes.FirstOrDefault(x => x.Name == entityType.Name);
+            }
+
+            if (storageEntityType == null && entityType.BaseType != null)
+            {
+                // In case the entity is inherited by another entity
+                storageEntityType = octx.MetadataWorkspace.GetItems(DataSpace.SSpace)
+                    .Where(x => x.BuiltInTypeKind == BuiltInTypeKind.EntityType).OfType<EntityType>()
+                    .Single(x => x.Name == entityType.BaseType.Name);
+            }
+
+            if (storageEntityType == null)
+            {
+                throw new Exception($"Cannot find entity of type {entityType.Name} in the context");
+            }
+
+            return storageEntityType;
         }
 
         /// <summary>
@@ -197,6 +288,39 @@ namespace EntityExtensions
             }
 
             return result;
+        }
+
+        public static IEnumerable<KeyValuePair<string, object>> GetDiscriminatorValues<T>(this DbContext dbContext)
+        {
+            var context = (dbContext as IObjectContextAdapter).ObjectContext;
+
+            var baseType = typeof(T).BaseType;
+            var typeToSearch = typeof(T).Name;
+            var mapping =
+                context.MetadataWorkspace.GetItemCollection(DataSpace.CSSpace).FirstOrDefault() as EntityContainerMapping;
+
+            var entitySet = mapping?.EntitySetMappings.FirstOrDefault(esm => esm.EntitySet.ElementType.Name == baseType.Name);
+
+            if (entitySet == null)
+            {
+                yield break;
+            }
+
+            var discriminatorMappingsForBaseEntity = entitySet
+                .EntityTypeMappings.Where(
+                    etm => etm.Fragments.Any(
+                        f => f.Conditions.Any(c => c is ValueConditionMapping)));
+
+            var descriminatorMappings = discriminatorMappingsForBaseEntity.Where(dm => dm.EntityType.Name == typeToSearch);
+
+            foreach (var descriminatorMapping in descriminatorMappings)
+            {
+                if (!(descriminatorMapping.Fragments.FirstOrDefault()?.Conditions.FirstOrDefault() is ValueConditionMapping condition))
+                {
+                    continue;
+                }
+                yield return new KeyValuePair<string, object>(condition.Column.Name, condition.Value);
+            }
         }
 
         private static Type GetPropertyType(PropertyInfo property)
