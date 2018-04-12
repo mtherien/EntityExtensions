@@ -27,7 +27,7 @@ namespace EntityExtensions.Internal
             var keys = context.GetTableKeyColumns<T>();
             var tableName = context.GetTableName<T>();
 
-            var sb = new StringBuilder($"MERGE INTO {tableName} dest ");
+            var sb = new StringBuilder($"MERGE INTO [{tableName.Replace(".","].[")}] dest ");
             sb.Append("USING (select ");
             var i = 0;
             foreach (var column in columns.Keys)
@@ -92,11 +92,11 @@ namespace EntityExtensions.Internal
         {
             var sb = new StringBuilder();
             sb.Append("Delete from ");
-            sb.AppendLine(destTable);
+            sb.AppendLine($"[{destTable.Replace(".","].[")}]");
             sb.Append("Where Exists(Select 1 from ");
-            sb.Append(srcTable);
+            sb.Append($"[{srcTable.Replace(".","].[")}]");
             sb.Append(" where ");
-            sb.Append(string.Join(" And ", keys.Select(x => $"[{x}] = {destTable}.[{x}]")));
+            sb.Append(string.Join(" And ", keys.Select(x => $"[{x}] = [{destTable}].[{x}]")));
             sb.Append(")");
             return sb.ToString();
         }
@@ -106,12 +106,12 @@ namespace EntityExtensions.Internal
         {
             var sb = new StringBuilder();
             var nonComputedCols = colNames.Where(x => !computedCols.ContainsKey(x)).ToList();
-            sb.AppendLine($"Merge into {destTable} dest using(select * from {srcTable}) src");
+            sb.AppendLine($"Merge into [{destTable.Replace(".","].[")}] dest using(select * from [{srcTable.Replace(".","].[")}]) src");
             sb.Append("on (");
             sb.Append(string.Join(" and ", keys.Select(x => $"src.[{x}] = dest.[{x}]")));
             sb.AppendLine(")");
             sb.AppendLine("when matched then update set");
-            sb.AppendLine(string.Join(", ", nonComputedCols.Select(x => $"{x} = src.[{x}]")));
+            sb.AppendLine(string.Join(", ", nonComputedCols.Select(x => $"[{x}] = src.[{x}]")));
             sb.AppendLine("when not matched then ");
             sb.Append("insert(");
             sb.Append(string.Join(",", nonComputedCols.Select(x => $"[{x}]")));
@@ -166,7 +166,7 @@ namespace EntityExtensions.Internal
         public static string GetTableDdl(this DbContext context, string tableName, IDictionary<string, EntityColumnInformation> tabCols)
         {
             var sb = new StringBuilder();
-            sb.AppendLine($"Create Table {tableName}(");
+            sb.AppendLine($"Create Table [{tableName.Replace(".","].[")}](");
 
             sb.AppendLine(string.Join(",\r\n",
                 tabCols.Select(x => $"[{x.Key}] {Helper.GetSqlServerType(x.Value.Type)}")));
