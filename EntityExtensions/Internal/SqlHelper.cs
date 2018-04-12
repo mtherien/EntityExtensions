@@ -169,7 +169,7 @@ namespace EntityExtensions.Internal
             sb.AppendLine($"Create Table [{tableName.Replace(".","].[")}](");
 
             sb.AppendLine(string.Join(",\r\n",
-                tabCols.Select(x => $"[{x.Key}] {Helper.GetSqlServerType(x.Value.Type)}")));
+                tabCols.Select(x => $"[{x.Key}] {Helper.GetSqlServerType(x.Value.Type, x.Value.EdmProperty)}")));
 
             sb.Append(")");
             return sb.ToString();

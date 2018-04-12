@@ -32,18 +32,18 @@ namespace EntityExtensions
                 y => y.MetadataProperties.FirstOrDefault(x => x.Name == "PreferredName")?.Value as string ?? y.Name);
 
             var columns = storageEntityType.KeyMembers.Select((elm, index) => new
-                    {elm.Name, Property = entityType.GetProperty(columnNames[elm.Name])})
-                .ToDictionary(x => x.Name, x => x.Property);
+                    {elm.Name, Property = entityType.GetProperty(columnNames[elm.Name]), Edm = elm});
 
             var columnKeys = new Dictionary<string, EntityColumnInformation>();
-            foreach (var columnName in columns.Keys)
+            foreach (var column in columns)
             {
-                columnKeys.Add(columnName,
+                
+                columnKeys.Add(column.Name,
                     new EntityColumnInformation
                     {
-                        Name = columnName,
-                        Type = columns[columnName].PropertyType,
-                        PropertyInfo = columns[columnName]
+                        Name = column.Name,
+                        Type = column.Property.PropertyType,
+                        PropertyInfo = column.Property
                     });
             }
 
@@ -120,8 +120,7 @@ namespace EntityExtensions
                 y => y.MetadataProperties.FirstOrDefault(x => x.Name == "PreferredName")?.Value as string ?? y.Name);
 
             var columns = storageEntityType.Properties.Select((elm, index) =>
-                    new { elm.Name, Property = entityType.GetProperty(columnNames[elm.Name]) })
-                .ToDictionary(x => x.Name, x => x.Property);
+                new {elm.Name, Property = entityType.GetProperty(columnNames[elm.Name]), elm});
 
             // The discriminator columns are columns used in a TPH table
             // If this entity has any discriminator columns, we need to get them
@@ -130,19 +129,20 @@ namespace EntityExtensions
                 context.GetDiscriminatorValues<T>().ToDictionary(v => v.Key, v => v.Value);
 
             var columnList = new Dictionary<string, EntityColumnInformation>();
-            foreach (var columnName in columns.Keys)
+            foreach (var column in columns)
             {
-                var propertyInfo = columns[columnName];
+                var propertyInfo = column.Property;
                 EntityColumnInformation entityColumnInformation = null;
                 if (propertyInfo == null)
                 {
-                    if (discriminatorColumnValues.ContainsKey(columnName))
+                    if (discriminatorColumnValues.ContainsKey(column.Name))
                     {
                         entityColumnInformation = new EntityColumnInformation
                         {
-                            Name = columnName,
-                            Type = discriminatorColumnValues[columnName].GetType(),
-                            DiscriminatorValue = discriminatorColumnValues[columnName]
+                            Name = column.Name,
+                            Type = discriminatorColumnValues[column.Name].GetType(),
+                            DiscriminatorValue = discriminatorColumnValues[column.Name],
+                            EdmProperty = column.elm
                         };
                     }
                 }
@@ -150,15 +150,16 @@ namespace EntityExtensions
                 {
                     entityColumnInformation = new EntityColumnInformation
                     {
-                        Name = columnName,
+                        Name = column.Name,
                         Type = propertyInfo.PropertyType,
-                        PropertyInfo = propertyInfo
+                        PropertyInfo = propertyInfo,
+                        EdmProperty = column.elm
                     };
                 }
 
                 if (entityColumnInformation != null)
                 {
-                    columnList.Add(columnName, entityColumnInformation);
+                    columnList.Add(column.Name, entityColumnInformation);
                 }
             }
 

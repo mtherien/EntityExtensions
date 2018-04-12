@@ -22,6 +22,8 @@ namespace EntityExtensions.Common
 
         public bool HasDiscriminator { get; private set; }
 
+        public System.Data.Entity.Core.Metadata.Edm.EdmProperty EdmProperty { get; set; }
+
         public object DiscriminatorValue
         {
             get => _discriminatorValue;

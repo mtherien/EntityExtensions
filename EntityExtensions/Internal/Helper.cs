@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Entity;
+using System.Data.Entity.Core.Metadata.Edm;
 using System.Linq;
 using System.Reflection;
 using EntityExtensions.Common;
@@ -31,44 +32,83 @@ namespace EntityExtensions.Internal
             }
         }
 
-        internal static string GetSqlServerType(Type type)
+        internal static string GetSqlServerType(Type type, EdmProperty typeUsage)
         {
             if (type.IsGenericType)
             {
                 //This is nullable
                 type = type.GetGenericArguments()[0];
             }
-            switch (Type.GetTypeCode(type))
+
+            if (typeUsage?.PrimitiveType == null ||
+                !typeUsage.PrimitiveType.NamespaceName.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
             {
-                case TypeCode.Int16:
-                    return "smallint";
-                case TypeCode.Int32:
-                    return "int";
-                case TypeCode.Decimal:
-                    return "decimal";
-                case TypeCode.DateTime:
-                    return "datetime";
-                case TypeCode.String:
-                    return "nvarchar(MAX)";
-                case TypeCode.Boolean:
-                    return "bit";
-                case TypeCode.Int64:
-                    return "bigint";
-                case TypeCode.Double:
-                    return "float";
-                default:
-                    if (type == typeof(Guid))
+                switch (Type.GetTypeCode(type))
+                {
+                    case TypeCode.Int16:
+                        return "smallint";
+                    case TypeCode.Int32:
+                        return "int";
+                    case TypeCode.Decimal:
+                        return "decimal";
+                    case TypeCode.DateTime:
+                        return "datetime";
+                    case TypeCode.String:
+                        return "nvarchar(MAX)";
+                    case TypeCode.Boolean:
+                        return "bit";
+                    case TypeCode.Int64:
+                        return "bigint";
+                    case TypeCode.Double:
+                        return "float";
+                    default:
+                        if (type == typeof(Guid))
+                        {
+                            return "uniqueidentifier";
+                        }
+                        else if (type == typeof(byte[]))
+                        {
+                            return "binary";
+                        }
+                        else
+                        {
+                            throw new Exception($"Unsupported database column type: {type.Name}");
+                        }
+                }
+            }
+
+            var sqlTypeName = typeUsage.PrimitiveType.Name;
+            switch (sqlTypeName.ToLower())
+            {
+                case "decimal":
+                    if (typeUsage.Precision != null && typeUsage.Scale != null)
                     {
-                        return "uniqueidentifier";
-                    }
-                    else if (type == typeof(byte[]))
-                    {
-                        return "binary";
+                        return $"decimal({typeUsage.Precision},{typeUsage.Scale})";
                     }
                     else
                     {
-                        throw new Exception($"Unsupported database column type: {type.Name}");
+                        return "decimal";
                     }
+                case "nvarchar":
+                    if (typeUsage.MaxLength != null)
+                    {
+                        return $"nvarchar({typeUsage.MaxLength})";
+                    }
+                    else
+                    {
+                        return "varchar(MAX)";
+                    }
+                case "varchar":
+                    if (typeUsage.MaxLength != null)
+                    {
+                        return $"varchar({typeUsage.MaxLength})";
+                    }
+                    else
+                    {
+                        return "varchar(MAX)";
+                    }
+                default:
+                    return sqlTypeName;
             }
         }
         /// <summary>
