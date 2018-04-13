@@ -96,7 +96,7 @@ namespace EntityExtensions.Internal
             sb.Append("Where Exists(Select 1 from ");
             sb.Append($"[{srcTable.Replace(".","].[")}]");
             sb.Append(" where ");
-            sb.Append(string.Join(" And ", keys.Select(x => $"[{x}] = [{destTable}].[{x}]")));
+            sb.Append(string.Join(" And ", keys.Select(x => $"[{x}] = [{destTable.Replace(".","].[")}].[{x}]")));
             sb.Append(")");
             return sb.ToString();
         }

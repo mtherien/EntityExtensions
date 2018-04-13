@@ -107,6 +107,24 @@ namespace EntityExtensions.Internal
                     {
                         return "varchar(MAX)";
                     }
+                case "char":
+                    if (typeUsage.MaxLength != null)
+                    {
+                        return $"char({typeUsage.MaxLength})";
+                    }
+                    else
+                    {
+                        return "char";
+                    }
+                case "nchar":
+                    if (typeUsage.MaxLength != null)
+                    {
+                        return $"nchar({typeUsage.MaxLength})";
+                    }
+                    else
+                    {
+                        return "nchar";
+                    }
                 default:
                     return sqlTypeName;
             }
